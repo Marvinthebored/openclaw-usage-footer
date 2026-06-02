@@ -1,0 +1,39 @@
+{
+  "id": "usage-footer",
+  "name": "Usage Footer",
+  "description": "Appends a customizable per-response usage footer, rendered by a local command that is fed live execution state (model, reasoning, fast mode, context, usage) via OpenClaw hooks.",
+  "version": "0.2.0",
+  "activation": {
+    "onStartup": true
+  },
+  "enabledByDefault": false,
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": { "type": "boolean" },
+      "command": { "type": "string" },
+      "args": { "type": "array", "items": { "type": "string" } },
+      "format": { "enum": ["plain", "preformatted", "raw"] },
+      "timeoutMs": { "type": "number" },
+      "maxOutputChars": { "type": "number" },
+      "maxOutputLines": { "type": "number" },
+      "surfaces": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "command": { "type": "string" },
+            "args": { "type": "array", "items": { "type": "string" } },
+            "format": { "enum": ["plain", "preformatted", "raw"] },
+            "timeoutMs": { "type": "number" },
+            "maxOutputChars": { "type": "number" },
+            "maxOutputLines": { "type": "number" }
+          }
+        }
+      }
+    }
+  }
+}
