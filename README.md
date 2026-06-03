@@ -14,6 +14,10 @@ The footer's *format* is entirely yours — emoji, bars, which fields, per-surfa
 
 The plugin hooks OpenClaw's universal reply path (`reply_payload_sending`), which fires on **every** surface — Discord, Telegram, and any future channel — including the Codex app-server harness. There is no channel-specific code in the plugin: surfaces are just keys in your config, each pointing at a renderer. Add `surfaces.feishu` / `surfaces.wechat` with a renderer script and it works; no plugin change needed.
 
+## Authoring skill (slash command)
+
+The plugin ships an OpenClaw **skill**, `usage-footer-author` (in [`skills/`](skills/)), which OpenClaw auto-exposes as an invocable skill-command. Invoking it loads the footer **contract + renderer-authoring rules** into the agent's context, so you can just say "tweak my footer" and the agent already knows the `openclaw.usageLine.v1` contract, the config layout, the fail-safe rules, and how to test a renderer offline — no need to re-explain any of it. Think of it as the footer's `/statusline`.
+
 ## Requirements
 
 This plugin reads per-turn state and provider usage limits through two small additions to OpenClaw core. Until they ship in a release, run a build that includes:
