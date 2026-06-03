@@ -1,25 +1,187 @@
 {
   "schema": "openclaw.usageBar.v1",
-  "sep": " | ",
-  "ramps": {
+
+  "_README": "This is BOTH the live footer template AND a sample sheet. The engine reads only: scales, output (legacy top-level sep/segments/surfaces still accepted). output.surfaces.<channel> defines the whole footer for that channel. Every key starting with _ is documentation it ignores. discord reproduces examples/discord_peetie.py and telegram reproduces examples/telegram_peetie2.py as closely as the current verb set allows; see _reconstructions for detail and _gaps for what's not yet expressible.",
+
+  "_contract": {
+    "_doc": "The INPUT schema. Every {path} in a text/item resolves against this object (the openclaw.usageLine.v1 contract the plugin pipes in on stdin). Dot-paths only; missing/null/\"\" → the |fallback (or empty). Built by usage-footer-plugin/index.js buildContract from the reply hook's usageState — when a field is unavailable upstream it arrives null/absent, NOT removed. Each entry: 'type — note'.",
+
+    "schema": "string — always \"openclaw.usageLine.v1\".",
+    "surface": "string|null — channel id (\"discord\"/\"telegram\"); selects which output.surfaces.<channel> list renders.",
+    "agentId": "string|null — flat (not under model) so you can key a per-agent emoji/name map off it.",
+    "chat_type": "string|null — e.g. dm/channel/thread.",
+
+    "model.id": "string|null — model id.",
+    "model.display_name": "string|null — same as id today (no provider prefix stripping; see _gaps lower/basename).",
+    "model.provider": "string|null — provider id (openai, anthropic, pioneer, …).",
+    "model.reasoning": "string|null — reasoning effort, e.g. \"med\".",
+    "model.actual": "string|null — resolved winner ref (the model actually used).",
+    "model.resolved_ref": "string|null — alias of model.actual.",
+    "model.requested": "string|null — provider/model originally requested.",
+    "model.is_fallback": "bool — true when a fallback model was used (🔄).",
+    "model.is_override": "bool — true when override_source is set and not \"\"/\"auto\" (✏️).",
+    "model.override_source": "string|null — what set the override (e.g. session, command).",
+    "model.auth_mode": "string|null — auth path (oauth, api-key, auth-profile, …).",
+
+    "state.fast_mode": "bool|null — ⚡ fast vs 🐌.",
+    "state.compactions": "number|null — compaction count this session.",
+
+    "usage.input_tokens": "number|undefined — prompt tokens this turn.",
+    "usage.output_tokens": "number|undefined — completion tokens this turn.",
+    "usage.cache_read_tokens": "number|undefined — tokens served from cache.",
+    "usage.cache_write_tokens": "number|undefined — tokens written to cache.",
+    "usage.total_tokens": "number|undefined — total this turn.",
+    "usage.cache_hit_pct": "number|undefined — 0–100; cacheRead/(cacheRead+cacheWrite+input). Absent → 🗄 segment drops.",
+
+    "context.used_tokens": "number|undefined — prompt total occupying the window.",
+    "context.max_tokens": "number|undefined — context budget (use with |num).",
+    "context.pct_used": "number|undefined — 0–100; feed to meter: (meter:1 for one glyph).",
+
+    "cost.turn_usd": "number|null — estimated $ for this turn.",
+    "cost.available": "bool — whether turn_usd is present (gate the 💲 segment on cost.turn_usd).",
+
+    "timing.duration_ms": "number|null — wall-clock ms for the turn (|dur expects SECONDS, so divide).",
+
+    "identity.name": "string|null — agent display name.",
+    "identity.emoji": "string|null — the emoji the agent chose as its marker (the {identity.emoji|🤖} default).",
+    "identity.avatar": "string|null — avatar url/path.",
+
+    "session.id": "string|null — session id (what /usage full now prints).",
+
+    "limits": "object|ABSENT — present only for oauth/mapped providers; absent for api-key/pioneer/unmapped (whole 📊 each-segment then drops). Fields below.",
+    "limits.available": "bool",
+    "limits.source": "string — which resolver produced it.",
+    "limits.display_name": "string|undefined — provider label.",
+    "limits.windows": "array — iterate with each; per-window fields below (each item is the loop scope, so reference them bare: {used_pct}, {resets_in_s}).",
+    "limits.windows[].label": "string — window name (e.g. \"5h\", \"week\"). Per-window styling by label is a _gap.",
+    "limits.windows[].used_pct": "number — 0–100 used.",
+    "limits.windows[].pct_left": "number — 0–100 remaining (for a depletion glyph).",
+    "limits.windows[].resets_in_s": "number|undefined — seconds to reset (|dur)."
+  },
+
+  "_consumer_notes": {
+    "_doc": "Constraints imposed by the plugin host (usage-footer-plugin/index.js runRenderer), not the engine. Output is .trim()'d and CRLF→LF.",
+    "max_output_lines": "plugins.entries.usage-footer.config.maxOutputLines (default 2; set to 3 here for the telegram 3-line layout). Output with MORE lines than this → the whole footer is rejected and core renders its default. This is the real ceiling on the linebreak trick.",
+    "max_output_chars": "500 by default — over-length output is rejected.",
+    "timeout_ms": "1500 by default — slow renderer is killed (SIGTERM→SIGKILL), footer dropped.",
+    "exit_nonzero": "any non-zero exit (incl. our 'no template' rc=1) → core falls back to its own usage line. Fail-open."
+  },
+
+  "scales": {
+    "_doc": "Named glyph vocabularies, each ordered low→high (string or list of single glyphs). Reference one by name in a meter: `{value|meter:W:NAME}` tiles a 0–100 value across W cells ([0]=empty, [-1]=full, boundary cell graded); width 1 gives a single glyph. To run high→low, feed a complementary value (e.g. pct_left), pipe |inv (100−value), or add a reversed-order scale.",
     "braille": "⠐⡀⡄⡆⡇⣇⣧⣷⣿",
-    "block": "░▏▎▍▌▋▊▉█"
+    "block": "░▏▎▍▌▋▊▉█",
+    "shade": "░▒▓█",
+    "moon": "🌑🌘🌗🌖🌕",
+    "level": "▁▂▃▄▅▆▇█",
+    "weather": ["🥶", "☁️", "🌥", "⛅️", "🌤", "☀️"],
+    "plants": ["🪾", "🍂", "🌱", "☘️", "🍀", "🌿"],
+    "moons6": ["🌑", "🌚", "🌘", "🌗", "🌖", "🌝"]
   },
-  "series": {
-    "moon": "🌑🌒🌓🌔🌕",
-    "level": "▁▂▃▄▅▆▇█"
+
+  "aliases": {
+    "_doc": "Named lookup tables for `{value|alias:TABLE}`. Maps a raw contract value to a short label; any value NOT listed is echoed unchanged (case-insensitive match). List only what you want shortened.",
+    "models": { "claude-opus-4-6": "opus46", "claude-sonnet-4-6": "sonnet46", "gpt-5.5": "gpt5.5" },
+    "reasoning": { "minimal": "min", "low": "lo", "medium": "med", "high": "hi" }
   },
-  "segments": [
-    { "text": "{identity.emoji|🤖} {model.display_name}" },
-    { "map": "model.is_fallback", "cases": { "true": "⤵" } },
-    { "map": "model.is_override", "cases": { "true": "📌" } },
-    { "when": "model.reasoning", "text": "{model.reasoning}" },
-    { "map": "state.fast_mode", "cases": { "true": "⚡", "false": "🐌" } },
-    { "text": "📚 [{context.pct_used|meter:5:braille}]{context.max_tokens|num}" },
-    { "text": "↕ {usage.input_tokens|num}/{usage.output_tokens|num}" },
-    { "when": "usage.cache_hit_pct", "text": "🗄 {usage.cache_hit_pct|pct}" },
-    { "when": "cost.turn_usd", "text": "💲{cost.turn_usd}" },
-    { "text": "📊", "each": "limits.windows", "item": "[{used_pct|meter:5:braille}]{resets_in_s|dur}" }
+
+  "output": {
+    "_doc": "The full footer definition, per surface. output.surfaces.<channel> is an ordered list of pieces; the engine renders each, drops empties, and joins survivors with output.sep (default \"\") to form the final line(s). The CHANNEL'S list IS the whole output — there is no shared top-level layout. surface = contract.surface (the reply channel id). A channel with no entry falls back to output.default (if set), else no custom footer. Embed \\n in a piece for multi-line; remember the consumer's maxOutputLines cap (see _consumer_notes).",
+    "sep": "",
+    "surfaces": {
+      "discord": [
+        { "_separator_line": "- because whitespace is trimmed"},
+        { "text": "-# -\n"},
+        { "_example": "🤖 gpt-5.5 | medium🐌 | 📚 [⣧⠐⠐⠐⠐]272k | ↕ 543/15🗄 99%📊 ☀️4h45m 🌤4.4d"},
+        { "text": "-# "},
+        { "text": "{identity.emoji|🤖} {model.display_name|alias:models}" },
+        { "map": "model.is_fallback", "cases": { "true": "🔄" } },
+        { "map": "model.is_override", "cases": { "true": "✏️" } },
+        { "text": " | "},
+        { "when": "model.reasoning", "text": "{model.reasoning|alias:reasoning}" },
+        { "map": "state.fast_mode", "cases": { "true": "⚡", "false": "🐌" } },
+        { "text": " | "},
+        { "text": "📚 [{context.pct_used|meter:5:braille}]{context.max_tokens|num}" },
+        { "text": " | "},
+        { "text": "↕ {usage.input_tokens|num}/{usage.output_tokens|num}" },
+        { "when": "usage.cache_hit_pct", "text": "🗄 {usage.cache_hit_pct|pct}" },
+        { "when": "cost.turn_usd", "text": "💲{cost.turn_usd}" },
+        { "text": "📊", "each": "limits.windows", "item": "{pct_left|meter:1:*}{resets_in_s|dur}", "item_scales": ["weather", "plants"] }
+      ],
+      "telegram": [
+        { "_target": "telegram_peetie2.py — 3 lines: dash / model+ctx / limits. Needs config maxOutputLines>=3.", "_approx": "no ✓ default status glyph; reasoning not shortened (medium not med); braille bar is left→right not bottom-up; all windows use one scale." },
+        { "text": "—\n" },
+        { "text": "{model.display_name|alias:models}" },
+        { "map": "model.is_fallback", "cases": { "true": " 🔄" } },
+        { "map": "model.is_override", "cases": { "true": " ✏️" } },
+        { "when": "model.reasoning", "text": " {model.reasoning|alias:reasoning}" },
+        { "map": "state.fast_mode", "cases": { "true": " ⚡", "false": " 🐌" } },
+        { "text": " |[{context.pct_used|meter:5:braille}]{context.max_tokens|num}\n" },
+        { "text": "📊", "each": "limits.windows", "item": "{pct_left|meter:1:*}{resets_in_s|dur}", "item_scales": ["weather", "plants"] }
+      ]
+    }
+  },
+
+  "_samples": [
+    { "atom": "literal + field", "code": "{ \"text\": \"🤖 {model.display_name}\" }", "yields": "🤖 gpt-5.5" },
+    { "atom": "fallback when field absent", "code": "{ \"text\": \"{identity.emoji|🤖} ...\" }", "yields": "🩺 ... (if identity.emoji set) else 🤖 ..." },
+    { "atom": "num (compact count)", "code": "{ \"text\": \"{usage.input_tokens|num}\" }", "yields": "3000 → 3.0k ; 272000 → 272k ; 128 → 128" },
+    { "atom": "pct", "code": "{ \"text\": \"{usage.cache_hit_pct|pct}\" }", "yields": "96 → 96%" },
+    { "atom": "inv (0–100 complement)", "code": "{ \"text\": \"{context.pct_used|inv|pct}\" }", "yields": "75 → 25% ; pipe before meter/pct to turn used→remaining without a separate field" },
+    { "atom": "dur (reset time)", "code": "{ \"text\": \"{x|dur}\" }", "yields": "14820 → 4h07m ; 449280 → 5.2d ; 1980 → 33m" },
+    { "atom": "meter (multi-char bar)", "code": "{ \"text\": \"[{context.pct_used|meter:5:braille}]\" }", "yields": "40 → [⣿⣿⠐⠐⠐] ; 88 → [⣿⣿⣿⣿⡆] ; uses scales.braille" },
+    { "atom": "meter, other style", "code": "{ \"text\": \"{context.pct_used|meter:8:block}\" }", "yields": "40 → ▉▉▉░░░░░ ; uses scales.block" },
+    { "atom": "single glyph (meter:1)", "code": "{ \"text\": \"📚{context.pct_used|meter:1:moon}\" }", "yields": "0→🌑 40→🌓 100→🌕 ; width-1 meter = one glyph by value (replaces old `series`)" },
+    { "atom": "single glyph, level", "code": "{ \"text\": \"{usage.cache_hit_pct|meter:1:level}\" }", "yields": "96 → █" },
+    { "atom": "when (show-if-present)", "code": "{ \"when\": \"usage.cache_hit_pct\", \"text\": \"🗄 {usage.cache_hit_pct|pct}\" }", "yields": "renders only when cache_hit_pct is present (absent → segment dropped; 0 still shows)" },
+    { "atom": "map (bool/enum → glyph)", "code": "{ \"map\": \"state.fast_mode\", \"cases\": { \"true\": \"⚡\", \"false\": \"🐌\" } }", "yields": "true→⚡ false→🐌 null→(nothing)" },
+    { "atom": "map (is_override → glyph)", "code": "{ \"map\": \"model.is_override\", \"cases\": { \"true\": \"✏️\" } }", "yields": "true→✏️ else (nothing)" },
+    { "atom": "alias (shorten, echo if unlisted)", "code": "{ \"text\": \"{model.display_name|alias:models} {model.reasoning|alias:reasoning}\" }", "yields": "claude-opus-4-6 → opus46 ; medium → med ; an unlisted value passes through unchanged. Tables live in top-level `aliases`." },
+    { "atom": "each (iterate limits)", "code": "{ \"text\": \"📊\", \"each\": \"limits.windows\", \"item\": \"{pct_left|meter:1:weather}{resets_in_s|dur}\" }", "yields": "📊 ☀️4h07m ⛅️5.2d  (one item per window; whole segment dropped if no windows)" },
+    { "atom": "each with meter", "code": "{ \"text\": \"📊\", \"each\": \"limits.windows\", \"item\": \"[{pct_left|meter:5:braille}]{resets_in_s|dur}\" }", "yields": "📊 [⣿⠐⠐⠐⠐]4h07m [⣧⠐⠐⠐⠐]5.2d  (this is discord_pioneer's limit_meter exactly)" },
+    { "atom": "each with per-window scale", "code": "{ \"text\": \"📊\", \"each\": \"limits.windows\", \"item\": \"{pct_left|meter:1:*}{resets_in_s|dur}\", \"item_scales\": [\"weather\", \"plants\"] }", "yields": "📊 ☀️4h07m 🌿5.2d  (window 0 → weather, window 1 → plants; `*` = this window's scale, clamped to the last name for extra windows)" }
   ],
-  "surfaces": { "telegram": { "sep": " " } }
+
+  "_reconstructions": {
+    "_doc": "How your existing footers map onto this template. ✅ = exact, ≈ = close (see note), ❌ = needs a verb/field we don't have yet (see _gaps).",
+
+    "discord_boring": {
+      "target": "gpt-5.5 (df) med fast | ctx [bar]272k | io 10k/21 | cache 71% | lim [bar]4h16m [bar]6.7d",
+      "segments": [
+        { "text": "{model.display_name}" },
+        { "map": "model.status", "cases": { "fallback": "[FB!]", "override": "(ov)", "default": "(df)" }, "_needs": "model.status — see _gaps" },
+        { "when": "model.reasoning", "text": "{model.reasoning}" },
+        { "map": "state.fast_mode", "cases": { "true": "fast", "false": "slow" } },
+        { "text": "ctx [{context.pct_used|meter:5:braille}]{context.max_tokens|num}", "_note": "≈ left-to-right meter; boring used a bottom-up braille_meter (see _gaps)" },
+        { "text": "io {usage.input_tokens|num}/{usage.output_tokens|num}" },
+        { "when": "usage.cache_hit_pct", "text": "cache {usage.cache_hit_pct|pct}" },
+        { "text": "lim", "each": "limits.windows", "item": "[{used_pct|meter:5:braille}]{resets_in_s|dur}", "_note": "✅ exact — limit_meter == ramps.braille" }
+      ]
+    },
+
+    "discord_peetie": {
+      "target": "🤖 gpt-5.5 ✓ med ⚡ | 📚 [bar]272k | ↕ 10k/21 | 🗄 71% | 📊 ☀️4h16m 🌿6.7d",
+      "note": "= the active template above. Two gaps: (1) ✓ default glyph needs model.status; (2) per-window emoji SET (5h→weather, week→plants) can't be chosen inside `each` yet — the active template uses `weather` for all windows. See _gaps."
+    },
+
+    "discord_pioneer": {
+      "note": "Identical to peetie BUT (a) limits use the braille limit_meter not emoji → use the `each with meter` item; (b) for the `pioneer`/`pioneer-ai` provider it self-fetches usage from ~/.openclaw/workspace/marvin/projects/ai-cost-tracker-v3/output/pioneer_usage.json. ❌ NOT expressible — a template can only read the contract. Fix: extend the core limits resolver to Pioneer so its windows land in `limits` (then this reconstruction becomes the `each with meter` item)."
+    },
+
+    "telegram_peetie2": {
+      "target": "—\\ngpt-5.5 ✓ med 🐌 |[bar]272k\\n📊 ☀️4h45m 🌿6.6d",
+      "note": "≈ Same atoms, but it prints THREE lines (— / model+ctx / limits). The engine emits a single line. ❌ multi-line output needs a newline separator / line groups (see _gaps). Single-line telegram works today via surfaces.telegram."
+    }
+  },
+
+  "_gaps": {
+    "_doc": "What the current verb set CANNOT do, found by reconstructing the real footers. Each is a candidate verb/field for the engine or the contract.",
+    "model.status (3-way state glyph)": "✓/🔄/✏️ is fallback>override>default precedence. Add a derived `model.status` = fallback|override|default to the contract (one buildContract line) → one clean `map`. (Today: separate maps for 🔄/✏️, no ✓.)",
+    "bottom-up braille meter": "The context braille_meter fills 2 columns × 4 dots bottom-up — a different glyph algorithm than a left→right ramp. Needs a meter `style: stack` mode in the engine. (limit_meter, the left→right one, IS reproduced exactly by meter:braille.)",
+    "per-item scale selection BY LABEL": "item_scales selects a scale per window BY POSITION (done). Selecting by the window's `label` instead (so reordering/missing windows stay correct) would still need an item-level label→scale map.",
+    "non-linear buckets": "usage_emoji buckets pct_left at <1/<20/<40/<60/<80. meter:1 is linear. Needs a `bucket:thresholds` verb for exact boundaries (linear meter:1 is a close approximation).",
+    "lower / basename": "short_model strips provider/ and lowercases. The alias verb covers explicit renames; a `lower`+`basename` verb would auto-shorten unlisted provider/model refs without listing each one.",
+    "multi-line output": "telegram_peetie2 is 3 lines. The engine joins to one line. Needs a newline `sep` or line-group support.",
+    "external data (pioneer)": "discord_pioneer self-fetches Pioneer usage from an external cache. A template can ONLY read the contract — by design. Fix is to enrich the contract (extend the core limits resolver to Pioneer), not to add a verb."
+  }
 }
