@@ -1,11 +1,161 @@
 {
-  "schema": "openclaw.usageBar.v1", "sep": " ",
-  "series": { "moon": "🌑🌒🌓🌔🌕", "level": "▁▂▃▄▅▆▇█" },
-  "segments": [
-    { "text": "{identity.emoji|🤖}{model.display_name}" },
-    { "map": "state.fast_mode", "cases": { "true": "⚡", "false": "🐌" } },
-    { "text": "📚{context.pct_used|series:moon}" },
-    { "when": "usage.cache_hit_pct", "text": "🗄{usage.cache_hit_pct|series:level}" },
-    { "text": "📊", "each": "limits.windows", "item": "{used_pct|series:moon}{resets_in_s|dur}" }
-  ]
+  "schema": "openclaw.usageBar.v1",
+  "scales": {
+    "braille": "⠐⡀⡄⡆⡇⣇⣧⣷⣿",
+    "block": "░▏▎▍▌▋▊▉█",
+    "shade": "░▒▓█",
+    "moon": "🌑🌘🌗🌖🌕",
+    "level": "▁▂▃▄▅▆▇█",
+    "weather": [
+      "🥶",
+      "☁️",
+      "🌥",
+      "⛅️",
+      "🌤",
+      "☀️"
+    ],
+    "plants": [
+      "🪾",
+      "🍂",
+      "🌱",
+      "☘️",
+      "🍀",
+      "🌿"
+    ],
+    "moons6": [
+      "🌑",
+      "🌚",
+      "🌘",
+      "🌗",
+      "🌖",
+      "🌝"
+    ]
+  },
+  "aliases": {
+    "models": {
+      "claude-opus-4-6": "opus46",
+      "claude-sonnet-4-6": "sonnet46",
+      "gpt-5.5": "gpt5.5"
+    },
+    "reasoning": {
+      "minimal": "min",
+      "low": "lo",
+      "medium": "med",
+      "high": "hi"
+    }
+  },
+  "output": {
+    "sep": "",
+    "surfaces": {
+      "discord": [
+        {
+          "text": "-# -\n"
+        },
+        {
+          "text": "-# "
+        },
+        {
+          "text": "{identity.emoji|🤖} {model.display_name|alias:models}"
+        },
+        {
+          "map": "model.is_fallback",
+          "cases": {
+            "true": "🔄"
+          }
+        },
+        {
+          "map": "model.is_override",
+          "cases": {
+            "true": "✏️"
+          }
+        },
+        {
+          "text": " | "
+        },
+        {
+          "when": "model.reasoning",
+          "text": "{model.reasoning|alias:reasoning}"
+        },
+        {
+          "map": "state.fast_mode",
+          "cases": {
+            "true": "⚡",
+            "false": "🐌"
+          }
+        },
+        {
+          "text": " | "
+        },
+        {
+          "text": "📚 [{context.pct_used|meter:5:braille}]{context.max_tokens|num}"
+        },
+        {
+          "text": " | "
+        },
+        {
+          "text": "↕ {usage.input_tokens|num}/{usage.output_tokens|num}"
+        },
+        {
+          "when": "usage.cache_hit_pct",
+          "text": "🗄 {usage.cache_hit_pct|pct}"
+        },
+        {
+          "when": "cost.turn_usd",
+          "text": "💲{cost.turn_usd}"
+        },
+        {
+          "text": "📊",
+          "each": "limits.windows",
+          "item": "{pct_left|meter:1:*}{resets_in_s|dur}",
+          "item_scales": [
+            "weather",
+            "plants"
+          ]
+        }
+      ],
+      "telegram": [
+        {
+          "text": "—\n"
+        },
+        {
+          "text": "{model.display_name|alias:models}"
+        },
+        {
+          "map": "model.is_fallback",
+          "cases": {
+            "true": " 🔄"
+          }
+        },
+        {
+          "map": "model.is_override",
+          "cases": {
+            "true": " ✏️"
+          }
+        },
+        {
+          "when": "model.reasoning",
+          "text": " {model.reasoning|alias:reasoning}"
+        },
+        {
+          "map": "state.fast_mode",
+          "cases": {
+            "true": " ⚡",
+            "false": " 🐌"
+          }
+        },
+        {
+          "text": " |[{context.pct_used|meter:5:braille}]{context.max_tokens|num}\n"
+        },
+        {
+          "text": "📊",
+          "each": "limits.windows",
+          "item": "{pct_left|meter:1:*}{resets_in_s|dur}",
+          "item_scales": [
+            "weather",
+            "plants"
+          ]
+        }
+      ]
+    }
+  }
 }
