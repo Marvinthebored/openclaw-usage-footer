@@ -1,40 +1,37 @@
 #!/usr/bin/env python3
-"""Atomic usage-footer translator.
+"""Usage-footer TRANSLATOR — engine only, no content.
 
-INPUT  : the openclaw.usageLine.v1 state contract, as JSON on stdin.
-TEMPLATE: a .usage_bar.json (declarative). Resolution order:
-          $USAGE_BAR_TEMPLATE  ->  ~/.openclaw/.usage_bar.json  ->  built-in DEFAULT.
-OUTPUT : one footer line on stdout. Empty/þerror -> exit 1 (caller falls back).
+INPUT  : the openclaw.usageLine.v1 state contract, JSON on stdin.
+TEMPLATE: a .usage_bar.json. Resolution: $USAGE_BAR_TEMPLATE -> ~/.openclaw/.usage_bar.json.
+OUTPUT : one footer line on stdout. Missing/empty/error -> exit 1 (caller falls back).
 
-Pure data translation — no exec, no network. This is the reference implementation
-for the future in-core `/usage full` renderer: feed it the contract, it walks the
-template's segments, interpolates contract paths through a small fixed verb set,
-and joins them. Drop-in usable as the plugin's renderer command today.
+This file is a TRANSLATOR, not a dictionary. It contains no glyphs, no layout, and
+no default footer — only mechanisms. All *content* (which glyphs make a meter, which
+chars are a fullness series, the segment order, the framing) is DATA in the template:
 
-================================ ATOMS (the verb set) ========================
-Used as `{path|verb:arg|fallback}` inside a segment's "text".
+  {
+    "sep": " | ",
+    "ramps":  { "<name>": "<low…high glyphs>", … },   // meter vocabularies
+    "series": { "<name>": "<glyph series>",     … },   // single-char vocabularies
+    "segments": [ … ]                                  // the layout
+  }
 
-  num                3000 -> "3.0k", 128 -> "128"           (compact counts)
-  dur                14820 -> "4h07m", 449280 -> "5.2d"      (seconds -> reset)
+Verbs (mechanisms), used as {path|verb:args|fallback}:
+  num                3000 -> "3.0k"      (compact count)
+  dur                14820 -> "4h07m"    (seconds -> reset)
   pct                96 -> "96%"
-  meter:WIDTH[,STYLE]   a 0-100 value -> a WIDTH-cell bar  [⣿⣿⠐⠐⠐]
-                        styles: braille (default) | block | shade
-  moon               a 0-100 value -> ONE char from 🌑🌒🌓🌔🌕   (new->full)
-  level              a 0-100 value -> ONE char from ▁▂▃▄▅▆▇█   (8 steps)
-
-Segment forms:
-  { "text": "🤖 {model.display_name}" }                 # interpolate + literals
-  { "when": "usage.cache_hit_pct", "text": "🗄 {usage.cache_hit_pct|pct}" }  # show if present
-  { "map":  "state.fast_mode", "cases": { "true": "⚡", "false": "🐌" } }     # enum/bool -> glyph
-  { "text": "📊", "each": "limits.windows", "item": "{used_pct|meter:5}{resets_in_s|dur}" }
-Top level: { "schema", "sep", "segments": [...], "surfaces": { "telegram": {...} } }
-=============================================================================="""
+  meter:WIDTH:RAMP   a 0-100 value -> WIDTH cells filled from ramps[RAMP] (graded
+                     boundary cell). Emits cells only — frame them in the template.
+  series:NAME        a 0-100 value -> ONE glyph from series[NAME]
+Segment forms: text / when / map+cases / each+item — see the example template.
+"""
 import json
 import os
 import re
 import sys
 
-# ----------------------------- atoms: number -> string -----------------------
+
+# --- number formatters (algorithms, not content) ----------------------------
 def _num(n):
     if n is None:
         return ""
@@ -60,45 +57,54 @@ def _pct(n):
     return "" if n is None else f"{int(round(float(n)))}%"
 
 
-# meter: a WIDTH-cell proportional bar; the boundary cell is graded, so a 5-cell
-# bar still resolves ~40 levels. ramp[0] = visible empty, ramp[-1] = full.
-_RAMPS = {
-    "braille": "⠐⡀⡄⡆⡇⣇⣧⣷⣿",
-    "block": "░▏▎▍▌▋▊▉█",
-    "shade": "░▒▓█",
-}
+def _norm(p):
+    return 0.0 if p is None else max(0.0, min(100.0, float(p))) / 100.0
 
 
-def _meter(p, width=5, style="braille"):
-    ramp = _RAMPS.get(style, _RAMPS["braille"])
+# --- meter / series mechanisms (glyphs supplied by the template, not here) ----
+def _meter(p, width, ramp):
+    """Fill `width` cells proportionally from `ramp` (low→high glyph string),
+    grading the boundary cell. Emits cells only; the template adds any framing."""
+    if not ramp or len(ramp) < 2:
+        return ""
     empty, full = ramp[0], ramp[-1]
-    p = 0.0 if p is None else max(0.0, min(100.0, float(p))) / 100.0
-    total = p * width
-    fullcells = int(total)
-    cells = [full] * min(fullcells, width)
+    total = _norm(p) * width
+    fullc = int(total)
+    cells = [full] * min(fullc, width)
     if len(cells) < width:
-        idx = int(round((total - fullcells) * (len(ramp) - 1)))
-        cells.append(ramp[idx])
+        cells.append(ramp[int(round((total - fullc) * (len(ramp) - 1)))])
     while len(cells) < width:
         cells.append(empty)
-    return "[" + "".join(cells[:width]) + "]"
+    return "".join(cells[:width])
 
 
 def _series(p, glyphs):
-    p = 0.0 if p is None else max(0.0, min(100.0, float(p))) / 100.0
-    return glyphs[min(len(glyphs) - 1, int(round(p * (len(glyphs) - 1))))]
+    if not glyphs:
+        return ""
+    return glyphs[min(len(glyphs) - 1, int(round(_norm(p) * (len(glyphs) - 1))))]
 
 
-VERBS = {
-    "num": lambda v, *a: _num(v),
-    "dur": lambda v, *a: _dur(v),
-    "pct": lambda v, *a: _pct(v),
-    "meter": lambda v, *a: _meter(v, int(a[0]) if a else 5, a[1] if len(a) > 1 else "braille"),
-    "moon": lambda v, *a: _series(v, "🌑🌒🌓🌔🌕"),
-    "level": lambda v, *a: _series(v, "▁▂▃▄▅▆▇█"),
-}
+def _apply_verb(name, args, value, vocab):
+    if name == "num":
+        return _num(value)
+    if name == "dur":
+        return _dur(value)
+    if name == "pct":
+        return _pct(value)
+    if name == "meter":
+        width = int(args[0]) if args else 5
+        ramp = vocab.get("ramps", {}).get(args[1]) if len(args) > 1 else None
+        return _meter(value, width, ramp)
+    if name == "series":
+        glyphs = vocab.get("series", {}).get(args[0]) if args else None
+        return _series(value, glyphs)
+    return str(value)
 
-# ----------------------------- template walker -------------------------------
+
+_VERB_NAMES = {"num", "dur", "pct", "meter", "series"}
+
+
+# --- template walker ----------------------------------------------------------
 def _get(ctx, path):
     cur = ctx
     for part in path.split("."):
@@ -113,31 +119,28 @@ def _get(ctx, path):
 _TOKEN = re.compile(r"\{([^}]+)\}")
 
 
-def _interp(text, ctx):
-    """Replace {path|verb:arg|fallback} tokens. A pipe segment that names a known
-    verb is applied; anything else is a literal fallback used when the value is
-    absent (e.g. {identity.emoji|🤖})."""
+def _interp(text, ctx, vocab):
     def repl(m):
         parts = m.group(1).split("|")
         val = _get(ctx, parts[0].strip())
-        verbs, fallback = [], None
+        ops, fallback = [], None
         for seg in (p.strip() for p in parts[1:]):
             name = seg.split(":")[0]
-            if name in VERBS:
-                verbs.append((name, seg.split(":")[1:]))
+            if name in _VERB_NAMES:
+                ops.append((name, seg.split(":")[1:]))
             else:
                 fallback = seg
         if val is None or val == "":
             return fallback if fallback is not None else ""
         out = val
-        for name, args in verbs:
-            out = VERBS[name](out, *args)
+        for name, args in ops:
+            out = _apply_verb(name, args, out, vocab)
         return str(out)
 
     return _TOKEN.sub(repl, text)
 
 
-def _render_segment(seg, ctx):
+def _render_segment(seg, ctx, vocab):
     if "when" in seg:
         v = _get(ctx, seg["when"])
         if v is None or v is False or v == "":
@@ -149,39 +152,26 @@ def _render_segment(seg, ctx):
         return cases.get(key, cases.get("_default", "")) or None
     if "each" in seg:
         arr = _get(ctx, seg["each"]) or []
-        body = seg.get("join", " ").join(r for r in (_interp(seg.get("item", ""), el) for el in arr) if r)
+        body = seg.get("join", " ").join(
+            r for r in (_interp(seg.get("item", ""), el, vocab) for el in arr) if r
+        )
         if not body:
             return None
         prefix = seg.get("text", "")
         return (prefix + " " + body) if prefix else body
     if "text" in seg:
-        return _interp(seg["text"], ctx) or None
+        return _interp(seg["text"], ctx, vocab) or None
     return None
 
 
 def render(template, contract):
     surface = contract.get("surface")
     ov = (template.get("surfaces") or {}).get(surface, {}) if surface else {}
-    sep = ov.get("sep", template.get("sep", " | "))
+    sep = ov.get("sep", template.get("sep", " "))
     segments = ov.get("segments", template.get("segments", []))
-    out = [r for r in (_render_segment(s, contract) for s in segments) if r]
+    vocab = {"ramps": template.get("ramps", {}), "series": template.get("series", {})}
+    out = [r for r in (_render_segment(s, contract, vocab) for s in segments) if r]
     return sep.join(out)
-
-
-DEFAULT = {
-    "schema": "openclaw.usageBar.v1",
-    "sep": " | ",
-    "segments": [
-        {"text": "{identity.emoji|🤖} {model.display_name}"},
-        {"map": "model.is_fallback", "cases": {"true": "⤵"}},
-        {"when": "model.reasoning", "text": "{model.reasoning}"},
-        {"map": "state.fast_mode", "cases": {"true": "⚡", "false": "🐌"}},
-        {"text": "📚 {context.pct_used|meter:5}{context.max_tokens|num}"},
-        {"text": "↕ {usage.input_tokens|num}/{usage.output_tokens|num}"},
-        {"when": "usage.cache_hit_pct", "text": "🗄 {usage.cache_hit_pct|pct}"},
-        {"text": "📊", "each": "limits.windows", "item": "{used_pct|meter:5}{resets_in_s|dur}"},
-    ],
-}
 
 
 def _load_template():
@@ -189,9 +179,9 @@ def _load_template():
     try:
         with open(path, encoding="utf-8") as f:
             t = json.load(f)
-        return t if isinstance(t, dict) and t.get("segments") else DEFAULT
+        return t if isinstance(t, dict) and t.get("segments") else None
     except Exception:
-        return DEFAULT
+        return None
 
 
 def main():
@@ -199,10 +189,13 @@ def main():
         contract = json.load(sys.stdin)
     except Exception:
         return 1
+    template = _load_template()
+    if not template:
+        return 1  # no content => no footer (fail-open; caller renders its own default)
     try:
-        line = render(_load_template(), contract)
+        line = render(template, contract)
     except Exception:
-        return 1  # fail-safe: caller renders its default
+        return 1
     if not line:
         return 1
     print(line)

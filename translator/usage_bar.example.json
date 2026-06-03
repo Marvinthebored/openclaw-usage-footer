@@ -1,15 +1,25 @@
 {
   "schema": "openclaw.usageBar.v1",
   "sep": " | ",
+  "ramps": {
+    "braille": "⠐⡀⡄⡆⡇⣇⣧⣷⣿",
+    "block": "░▏▎▍▌▋▊▉█"
+  },
+  "series": {
+    "moon": "🌑🌒🌓🌔🌕",
+    "level": "▁▂▃▄▅▆▇█"
+  },
   "segments": [
     { "text": "{identity.emoji|🤖} {model.display_name}" },
     { "map": "model.is_fallback", "cases": { "true": "⤵" } },
+    { "map": "model.is_override", "cases": { "true": "📌" } },
     { "when": "model.reasoning", "text": "{model.reasoning}" },
     { "map": "state.fast_mode", "cases": { "true": "⚡", "false": "🐌" } },
-    { "text": "📚 {context.pct_used|meter:5}{context.max_tokens|num}" },
+    { "text": "📚 [{context.pct_used|meter:5:braille}]{context.max_tokens|num}" },
     { "text": "↕ {usage.input_tokens|num}/{usage.output_tokens|num}" },
     { "when": "usage.cache_hit_pct", "text": "🗄 {usage.cache_hit_pct|pct}" },
-    { "text": "📊", "each": "limits.windows", "item": "{used_pct|meter:5}{resets_in_s|dur}" }
+    { "when": "cost.turn_usd", "text": "💲{cost.turn_usd}" },
+    { "text": "📊", "each": "limits.windows", "item": "[{used_pct|meter:5:braille}]{resets_in_s|dur}" }
   ],
   "surfaces": { "telegram": { "sep": " " } }
 }

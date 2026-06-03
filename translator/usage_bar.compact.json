@@ -1,10 +1,11 @@
 {
   "schema": "openclaw.usageBar.v1", "sep": " ",
+  "series": { "moon": "🌑🌒🌓🌔🌕", "level": "▁▂▃▄▅▆▇█" },
   "segments": [
     { "text": "{identity.emoji|🤖}{model.display_name}" },
     { "map": "state.fast_mode", "cases": { "true": "⚡", "false": "🐌" } },
-    { "text": "📚{context.pct_used|moon}" },
-    { "when": "usage.cache_hit_pct", "text": "🗄{usage.cache_hit_pct|level}" },
-    { "text": "📊", "each": "limits.windows", "item": "{used_pct|moon}{resets_in_s|dur}" }
+    { "text": "📚{context.pct_used|series:moon}" },
+    { "when": "usage.cache_hit_pct", "text": "🗄{usage.cache_hit_pct|series:level}" },
+    { "text": "📊", "each": "limits.windows", "item": "{used_pct|series:moon}{resets_in_s|dur}" }
   ]
 }
