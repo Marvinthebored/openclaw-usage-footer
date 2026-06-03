@@ -1,10 +1,8 @@
 import { spawn } from "node:child_process";
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { resolveLivePluginConfigObject } from "openclaw/plugin-sdk/plugin-config-runtime";
-import { getProviderUsageLimitsCached } from "openclaw/plugin-sdk/provider-usage";
 
 const PLUGIN_ID = "usage-footer";
-const LIMITS_TIMEOUT_MS = 2500;
 const SIGKILL_GRACE_MS = 2000;
 
 function resolveRenderer(config, surface) {
@@ -74,8 +72,10 @@ function buildContract(state, surface) {
       max_tokens: maxTokens,
       pct_used: pctUsed,
     },
-    // `limits` (📊 provider usage windows) lands once the SDK exposes the read
-    // accessor; renderers should treat it as optional/absent.
+    // 📊 provider usage windows — passed straight through from the hook's
+    // usageState when core attached them (oauth providers); absent for api-key /
+    // unmapped providers, leaving the renderer free to use its own source.
+    ...(state.limits ? { limits: state.limits } : {}),
   };
 }
 
@@ -171,26 +171,16 @@ export default definePluginEntry({
         if (config.enabled === false) return;
         const renderer = resolveRenderer(config, event?.channel);
         if (!renderer) return;
-        const state = event?.usageState;
-        if (!state) return;
+        // Build the full contract from whatever the hook provides. The renderer
+        // (user output) is the only thing that depends on which fields exist, so a
+        // sparse/empty usageState yields an all-optional contract, never a
+        // suppressed one.
+        const state = event?.usageState ?? {};
 
         const payload = event.payload;
         if (!payload || typeof payload.text !== "string" || payload.text.length === 0) return;
 
         const contract = buildContract(state, event.channel);
-        // 📊 provider usage windows — attached only when core can resolve them
-        // (e.g. oauth openai/codex). Undefined for api-key/unmapped providers,
-        // leaving the renderer free to use its own source (e.g. pioneer self-fetch).
-        // Non-blocking: returns cached limits and refreshes in the background, so it
-        // never adds network latency to reply delivery.
-        try {
-          const limits = getProviderUsageLimitsCached(state.provider, {
-            timeoutMs: LIMITS_TIMEOUT_MS,
-          });
-          if (limits) contract.limits = limits;
-        } catch {
-          /* limits are best-effort; footer still renders without 📊 */
-        }
 
         const line = await runRenderer(renderer, contract);
         if (!line) return;

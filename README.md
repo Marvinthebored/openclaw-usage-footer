@@ -20,12 +20,11 @@ The plugin ships an OpenClaw **skill**, `usage-footer-author` (in [`skills/`](sk
 
 ## Requirements
 
-This plugin reads per-turn state and provider usage limits through two small additions to OpenClaw core. Until they ship in a release, run a build that includes:
+This plugin reads per-turn state through one small addition to OpenClaw core: a `usageState` field (model, usage, context, and the active provider's `limits` windows) on the `reply_payload_sending` hook. Until it ships in a release, run a build that includes it:
 
 - **`usageState` on the `reply_payload_sending` hook** — openclaw/openclaw#89629
-- **`getProviderUsageLimits` / `getProviderUsageLimitsCached` plugin-SDK accessor** — openclaw/openclaw#89631 (only needed for the `📊` limits segment)
 
-Everything except `📊` works with #89629 alone.
+That single change carries everything, including the `📊` provider-limit windows — the plugin is a pure consumer of the contract and makes no side calls. (An earlier draft split limits into a separate plugin-SDK accessor; that was folded into #89629, so there is nothing else to apply.)
 
 ## Install
 
