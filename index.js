@@ -42,9 +42,18 @@ function buildContract(state, surface) {
   const pctUsed =
     maxTokens && usedTokens !== undefined ? Math.round((usedTokens / maxTokens) * 100) : undefined;
 
+  const overrideSource = state.overrideSource ?? null;
+  const isOverride =
+    typeof state.overrideSource === "string" &&
+    state.overrideSource !== "" &&
+    state.overrideSource !== "auto";
+
   return {
     schema: "openclaw.usageLine.v1",
     surface: surface ?? null,
+    // agentId is exposed flat so templates can key per-agent (e.g. emoji map).
+    agentId: state.agentId ?? null,
+    chat_type: state.chatType ?? null,
     model: {
       id: state.model ?? null,
       display_name: state.model ?? null,
@@ -53,7 +62,11 @@ function buildContract(state, surface) {
       // openclaw.usageLine.v1 names the resolved winner ref "actual".
       actual: state.resolvedRef ?? null,
       resolved_ref: state.resolvedRef ?? null,
+      requested: state.requested ?? null,
       is_fallback: state.fallbackUsed === true,
+      is_override: isOverride,
+      override_source: overrideSource,
+      auth_mode: state.authMode ?? null,
     },
     state: {
       fast_mode: typeof state.fastMode === "boolean" ? state.fastMode : null,
@@ -72,6 +85,19 @@ function buildContract(state, surface) {
       max_tokens: maxTokens,
       pct_used: pctUsed,
     },
+    cost: {
+      turn_usd: typeof state.turnUsd === "number" ? state.turnUsd : null,
+      available: typeof state.turnUsd === "number",
+    },
+    timing: {
+      duration_ms: typeof state.durationMs === "number" ? state.durationMs : null,
+    },
+    identity: {
+      name: state.identity?.name ?? null,
+      emoji: state.identity?.emoji ?? null,
+      avatar: state.identity?.avatar ?? null,
+    },
+    session: { id: state.sessionId ?? null },
     // 📊 provider usage windows — passed straight through from the hook's
     // usageState when core attached them (oauth providers); absent for api-key /
     // unmapped providers, leaving the renderer free to use its own source.

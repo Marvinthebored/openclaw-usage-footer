@@ -1,0 +1,15 @@
+{
+  "schema": "openclaw.usageBar.v1",
+  "sep": " | ",
+  "segments": [
+    { "text": "{identity.emoji|🤖} {model.display_name}" },
+    { "map": "model.is_fallback", "cases": { "true": "⤵" } },
+    { "when": "model.reasoning", "text": "{model.reasoning}" },
+    { "map": "state.fast_mode", "cases": { "true": "⚡", "false": "🐌" } },
+    { "text": "📚 {context.pct_used|meter:5}{context.max_tokens|num}" },
+    { "text": "↕ {usage.input_tokens|num}/{usage.output_tokens|num}" },
+    { "when": "usage.cache_hit_pct", "text": "🗄 {usage.cache_hit_pct|pct}" },
+    { "text": "📊", "each": "limits.windows", "item": "{used_pct|meter:5}{resets_in_s|dur}" }
+  ],
+  "surfaces": { "telegram": { "sep": " " } }
+}
